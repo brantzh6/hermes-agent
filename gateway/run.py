@@ -2288,6 +2288,15 @@ class GatewayRunner:
             self._running = False
             self._draining = True
 
+            # Write clean-shutdown marker EARLY — before drain begins — so that
+            # even if systemd SIGKILLs us due to TimeoutStopSec (60s), the marker
+            # already exists. This prevents suspend_recently_active() from
+            # auto-resetting sessions on the next startup.
+            try:
+                (_hermes_home / ".clean_shutdown").touch()
+            except Exception:
+                pass
+
             # Notify all chats with active agents BEFORE draining.
             # Adapters are still connected here, so messages can be sent.
             await self._notify_active_sessions_of_shutdown()
@@ -2370,6 +2379,10 @@ class GatewayRunner:
             # message).  Skip the marker in that case so the next startup
             # suspends those sessions — giving users a clean slate instead
             # of resuming a half-finished tool loop.
+            # Clean-shutdown marker was already written at the top of _stop_impl()
+            # (before drain), so it exists even if systemd SIGKILLs us during a
+            # long drain.  Re-touch here as a no-op for completeness.
+            # (See the early write above for the real safeguard.)
             if not timed_out:
                 try:
                     (_hermes_home / ".clean_shutdown").touch()
